@@ -36,9 +36,6 @@ function generateMiriferReport(entries, userInfo) {
         }
     });
 
-    // Add footer to all pages BEFORE ending the document
-    addFooters(doc);
-
     doc.end();
     return doc;
 }
