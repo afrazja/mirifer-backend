@@ -141,6 +141,64 @@ OUTPUT FORMAT:
 - Final line must be exactly: Today is complete.
 `;
 
+
+const FINAL_THOUGHTS_PROMPT = `
+You are Mirifer, an Uncertainty Reduction System. You have access to a user's complete journey reflections.
+
+Write a "Final Thoughts" section (200-250 words) that:
+1. Identifies the 2-3 most recurring patterns across ALL days
+2. Names the core tension or structural constraint that emerged
+3. Observes how their thinking evolved from first day to last day
+4. Notes any shifts in framing or perspective
+
+CRITICAL RULES:
+- Use past tense and third-person perspective
+- "The reflections revealed..." NOT "You revealed..."
+- "A pattern emerged..." NOT "You show a pattern of..."
+- NO advice, suggestions, or action steps
+- NO questions to the user
+- NO motivational language
+- Calm, neutral, observational tone
+- Compress insight so it feels inevitable
+- Avoid psychology jargon
+
+OUTPUT:
+Write 2-3 paragraphs, 200-250 words total.
+End with: "This marks the completion of [N] days of documented reflection." (replace [N] with actual number)
+`;
+
+// Generate Final Thoughts using AI
+async function generateFinalThoughts(entries) {
+    try {
+        // Build context from all entries
+        let context = `The user completed ${entries.length} days of reflection. Below are ALL their reflections:\n\n`;
+        
+        entries.forEach(entry => {
+            context += `Day ${entry.day} - ${entry.title}\n`;
+            context += `Question: ${entry.question}\n`;
+            context += `User's reflection: ${entry.user_text}\n`;
+            context += `Your response: ${entry.ai_text}\n\n`;
+        });
+        
+        context += `\nWrite a "Final Thoughts" section following the rules above. Replace [N] with ${entries.length}.`;
+        
+        // Call DeepSeek
+        const response = await openai.chat.completions.create({
+            model: 'deepseek-chat',
+            messages: [
+                { role: 'system', content: FINAL_THOUGHTS_PROMPT },
+                { role: 'user', content: context }
+            ],
+            temperature: 0.3,
+            max_tokens: 500
+        });
+        
+        return response.choices[0].message.content;
+    } catch (error) {
+        console.error('Final Thoughts Generation Error:', error);
+        return null;
+    }
+}
 // Login endpoint - validate access code
 app.post('/api/auth/login', async (req, res) => {
     try {
@@ -430,10 +488,18 @@ app.get('/api/mirifer/report.pdf', requireUser, async (req, res) => {
             });
         }
 
+        // Generate Final Thoughts using AI (if 3+ days completed)
+        let finalThoughts = null;
+        if (entries.length >= 3) {
+            console.log(`Generating Final Thoughts for ${entries.length} days...`);
+            finalThoughts = await generateFinalThoughts(entries);
+        }
+
         // Generate PDF with whatever days have data
         const pdfDoc = generateMiriferReport(entries, {
             accessCode: req.user.access_code,
-            daysCompleted: entries.length
+            daysCompleted: entries.length,
+            finalThoughts: finalThoughts
         });
 
         res.setHeader('Content-Type', 'application/pdf');
