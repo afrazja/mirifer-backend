@@ -27,10 +27,9 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// DeepSeek Client Configuration
+// OpenAI Client Configuration (ChatGPT)
 const openai = new OpenAI({
-    apiKey: process.env.DEEPSEEK_API_KEY,
-    baseURL: 'https://api.deepseek.com/v1',
+    apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Guardrails & Prompts
@@ -172,19 +171,19 @@ async function generateFinalThoughts(entries) {
     try {
         // Build context from all entries
         let context = `The user completed ${entries.length} days of reflection. Below are ALL their reflections:\n\n`;
-        
+
         entries.forEach(entry => {
             context += `Day ${entry.day} - ${entry.title}\n`;
             context += `Question: ${entry.question}\n`;
             context += `User's reflection: ${entry.user_text}\n`;
             context += `Your response: ${entry.ai_text}\n\n`;
         });
-        
+
         context += `\nWrite a "Final Thoughts" section following the rules above. Replace [N] with ${entries.length}.`;
-        
+
         // Call DeepSeek
         const response = await openai.chat.completions.create({
-            model: 'deepseek-chat',
+            model: 'gpt-4o-mini',
             messages: [
                 { role: 'system', content: FINAL_THOUGHTS_PROMPT },
                 { role: 'user', content: context }
@@ -192,7 +191,7 @@ async function generateFinalThoughts(entries) {
             temperature: 0.3,
             max_tokens: 500
         });
-        
+
         return response.choices[0].message.content;
     } catch (error) {
         console.error('Final Thoughts Generation Error:', error);
@@ -295,7 +294,7 @@ app.post('/api/mirifer/respond', requireUser, async (req, res) => {
         }
 
         const response = await openai.chat.completions.create({
-            model: 'deepseek-chat',
+            model: 'gpt-4o-mini',
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt },
@@ -779,21 +778,21 @@ app.get('/api/test/pdf', requireUser, async (req, res) => {
     try {
         const PDFDocument = require('pdfkit');
         const doc = new PDFDocument();
-        
+
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'attachment; filename="test-report.pdf"');
-        
+
         doc.pipe(res);
-        
+
         doc.fontSize(25)
-           .text('Your Report is Ready!', 100, 100);
-        
+            .text('Your Report is Ready!', 100, 100);
+
         doc.fontSize(12)
-           .text(`Generated at: ${new Date().toISOString()}`, 100, 150);
-        
+            .text(`Generated at: ${new Date().toISOString()}`, 100, 150);
+
         doc.fontSize(10)
-           .text(`User: ${req.user.access_code}`, 100, 180);
-        
+            .text(`User: ${req.user.access_code}`, 100, 180);
+
         doc.end();
     } catch (error) {
         console.error('Test PDF Error:', error);
