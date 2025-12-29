@@ -168,24 +168,32 @@ OUTPUT FORMAT:
 const FOLLOW_UP_QUESTION_PROMPT = `
 You are Mirifer: an Uncertainty Reduction System.
 
-You just received a user's reflection on a specific question. Your task is to generate ONE follow-up question that:
+You just received a user's reflection on a specific question. Your task is to determine if a follow-up question would reveal something deeper.
 
-1. **Identifies the deepest tension** - What underlying assumption or constraint is creating the most friction?
-2. **Targets the root cause** - What structural reality or tradeoff is being avoided?
-3. **Stays concrete** - Use specific language from their answer
-4. **Avoids generic therapy questions** - No "How does that make you feel?" or "What would you tell a friend?"
-5. **Maintains Mirifer's tone** - Calm, direct, structural
+WHEN TO ASK A FOLLOW-UP:
+- The answer reveals a contradiction or hidden assumption worth exploring
+- There's a structural constraint or tradeoff being avoided
+- The answer is surface-level and doesn't engage with the core tension
+- There's a specific phrase or framing that deserves examination
 
-CRITICAL RULES:
-- ONE question only (15-25 words max)
-- Must reference something specific from their answer
-- Should reveal a contradiction, tradeoff, or hidden assumption
-- No motivational or coaching language
-- No "What if..." or "Have you considered..." questions
-- Prefer "What is..." or "Where does..." framing
+WHEN NOT TO ASK A FOLLOW-UP:
+- The answer is already deep and structurally aware
+- The user has fully engaged with the core tension
+- A follow-up would just repeat what's already been addressed
+- The answer is complete and self-aware
+
+IF A FOLLOW-UP IS WARRANTED:
+Generate ONE question (15-25 words) that:
+1. References something specific from their answer
+2. Reveals a contradiction, tradeoff, or hidden assumption
+3. Uses "What is..." or "Where does..." framing (not "What if..." or "Have you considered...")
+4. Maintains Mirifer's calm, structural tone
+
+IF NO FOLLOW-UP IS NEEDED:
+Return exactly: NO_FOLLOWUP
 
 OUTPUT:
-Return ONLY the follow-up question. No explanation, no preamble.
+Either the follow-up question OR "NO_FOLLOWUP" (nothing else).
 `;
 
 const FINAL_THOUGHTS_PROMPT = `
@@ -775,11 +783,11 @@ app.post('/api/mirifer/generate-postcard', requireUser, async (req, res) => {
 app.post('/api/mirifer/generate-followup', requireUser, async (req, res) => {
     try {
         const { day, question1, userAnswer1 } = req.body;
-        
+
         if (!day || !question1 || !userAnswer1) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
-        
+
         // Build context for AI
         const context = `
 ORIGINAL QUESTION:
@@ -790,7 +798,7 @@ ${userAnswer1}
 
 Generate a follow-up question that digs deeper into the root cause or structural constraint revealed in their answer.
 `;
-        
+
         const response = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
@@ -800,10 +808,25 @@ Generate a follow-up question that digs deeper into the root cause or structural
             temperature: 0.5,
             max_tokens: 100
         });
-        
+
         const followUpQuestion = response.choices[0].message.content.trim();
-        
-        // Save to database
+
+        // Check if AI determined no follow-up is needed
+        if (followUpQuestion === 'NO_FOLLOWUP') {
+            // Mark day as complete since no Q2 is needed
+            await supabaseAdmin
+                .from('entries')
+                .update({
+                    is_completed: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('trial_user_id', req.user.id)
+                .eq('day', day);
+
+            return res.json({ question: null, noFollowup: true });
+        }
+
+        // Save follow-up question to database
         await supabaseAdmin
             .from('entries')
             .update({
@@ -812,8 +835,8 @@ Generate a follow-up question that digs deeper into the root cause or structural
             })
             .eq('trial_user_id', req.user.id)
             .eq('day', day);
-        
-        res.json({ question: followUpQuestion });
+
+        res.json({ question: followUpQuestion, noFollowup: false });
     } catch (error) {
         console.error('Follow-up generation error:', error);
         res.status(500).json({ error: 'Failed to generate follow-up question' });
